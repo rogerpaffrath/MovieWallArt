@@ -24,8 +24,8 @@ using namespace std;
 #ifndef MOVIE_WALL_ART
 #define MOVIE_WALL_ART
 
-#define ART_WIDTH 1080
-#define ART_HEIGHT 1920
+#define ART_WIDTH 1920
+#define ART_HEIGHT 1080
 
 #define MOVIE_PATH "path/to/your/movie.mp4"
 #define ART_PATH "path/to/your/art.png"
