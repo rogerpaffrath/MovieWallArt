@@ -11,6 +11,8 @@
 * but WITHOUT ANY WARRANTY; without even the implied warranty of
 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 * GNU General Public License for more details.
+* 
+* This project uses OpenCV - https://opencv.org/
 *
 * Written by Roger Paffrath, May 2023       
 */
@@ -32,8 +34,95 @@ using namespace std;
 
 #define ART_STYLE_CENTER_PIXEL 1
 #define ART_STYLE_AVERAGE_COLOR 2
+#define ART_STYLE_PIXEL_STRIP 3
 
 #endif // !MOVIE_WALL_ART
+
+/**
+ * Get the average color of a frame.
+ *
+ * @param frame A reference to the current frame of the movie that is going to be processed to create a column in the new image.
+ */
+Vec3b GetFrameAverageColor(Mat& frame) {
+    int frame_h = frame.size[0];
+    int frame_w = frame.size[1];
+    int frame_dimension = frame_h * frame_w;
+
+    float pixel_color_b = 0.0f;
+    float pixel_color_g = 0.0f;
+    float pixel_color_r = 0.0f;
+
+    Vec3b average_color;
+
+    for (int w = 0; w < frame_w; w++) {
+        for (int h = 0; h < frame_h; h++) {
+            Vec3b& pixel = frame.at<Vec3b>(h, w);
+            pixel_color_b += pixel[0];
+            pixel_color_g += pixel[1];
+            pixel_color_r += pixel[2];
+        }
+    }
+
+    average_color[0] = pixel_color_b / frame_dimension;
+    average_color[1] = pixel_color_g / frame_dimension;
+    average_color[2] = pixel_color_r / frame_dimension;
+
+    return average_color;
+}
+
+/**
+ * Get the pixel strip of a frame.
+ *
+ * @param frame A reference to the current frame of the movie that is going to be processed to create a column in the new image.
+ */
+vector<Vec3b> GetFramePixelStrip(Mat& frame, int strip_size) {
+    vector<Vec3b> pixel_strip(strip_size);
+
+    int frame_h = frame.size[0];
+    int frame_w = frame.size[1];
+    int frame_dimension = frame_h * frame_w;
+
+    int sample_interval = frame_dimension / strip_size;
+    int strip_interval = sample_interval / strip_size;
+    int count = 0;
+    int strip_index = 0;
+
+    float g = 0.0f;
+    float b = 0.0f;
+    float r = 0.0f;
+
+    for (int x = 0; x < frame_w; x++) {
+        for (int y = 0; y < frame_h; y++) {
+            Vec3b pixel = frame.at<Vec3b>(y, x);
+
+            g += pixel[0];
+            b += pixel[1];
+            r += pixel[2];
+
+            count++;
+
+            if (count > sample_interval) {
+                g = g / count;
+                b = b / count;
+                r = r / count;
+
+                for (int i = 0; i < strip_interval; i++) {
+                    if (strip_index < strip_size) {
+                        pixel_strip[strip_index] = Vec3b(g, b, r);
+                        strip_index++;
+                    }
+                }
+
+                count = 0;
+                g = 0.0f;
+                b = 0.0f;
+                r = 0.0f;
+            }
+        }
+    }
+
+    return pixel_strip;
+}
 
 /**
  * Create a column in the art image.
@@ -43,50 +132,49 @@ using namespace std;
  * @param column_id The index of the column in the new image.
  * @param style The style to render the new image. It can be ART_STYLE_CENTER_PIXEL or ART_STYLE_AVERAGE_COLOR.
  */
-void CreateArtColumn(Mat& frame, Mat& art_image, int column_id, int style) {
+void CreateArtColumn(Mat& frame, Mat& art_image, int column_id, int style = ART_STYLE_AVERAGE_COLOR) {
     try {
-        int frame_h = frame.size[0];
-        int frame_w = frame.size[1];
-        int frame_dimension = frame_h * frame_w;
-
         if (style == ART_STYLE_CENTER_PIXEL) {
-            Vec3b& pixel = frame.at<Vec3b>(frame_h / 2, frame_w / 2);
+            int frame_h = frame.size[0];
+            int frame_w = frame.size[1];
+
+            Vec3b column_color;
+
+            column_color = frame.at<Vec3b>(frame_h / 2, frame_w / 2);
             
             for (int i = 0; i < ART_HEIGHT; i++)
             {
-                Vec3b& new_pixel = art_image.at<Vec3b>(i, column_id);
-                new_pixel[0] = pixel[0];
-                new_pixel[1] = pixel[1];
-                new_pixel[2] = pixel[2];
+                Vec3b& pixel = art_image.at<Vec3b>(i, column_id);
+                pixel = column_color;
             }
         }
         else  if (style == ART_STYLE_AVERAGE_COLOR) {
-            long pixel_color_b = 0.0f;
-            long pixel_color_g = 0.0f;
-            long pixel_color_r = 0.0f;
-
-            for (int w = 0; w < frame_w; w++) {
-                for (int h = 0; h < frame_h; h++) {
-                    Vec3b& pixel = frame.at<Vec3b>(h, w);
-                    pixel_color_b += pixel[0];
-                    pixel_color_g += pixel[1];
-                    pixel_color_r += pixel[2];
-                }
-            }
+            Vec3b column_color = GetFrameAverageColor(frame);
 
             for (int i = 0; i < ART_HEIGHT; i++)
             {
-                Vec3b& new_pixel = art_image.at<Vec3b>(i, column_id);
-                new_pixel[0] = pixel_color_b / frame_dimension;
-                new_pixel[1] = pixel_color_g / frame_dimension;
-                new_pixel[2] = pixel_color_r / frame_dimension;
+                Vec3b& pixel = art_image.at<Vec3b>(i, column_id);
+                pixel = column_color;
+            }
+        }
+        else if (style == ART_STYLE_PIXEL_STRIP) {
+            vector<Vec3b> column_colors = GetFramePixelStrip(frame, ART_HEIGHT);
+
+            for (int i = 0; i < ART_HEIGHT; i++)
+            {
+                Vec3b& pixel = art_image.at<Vec3b>(i, column_id);
+                pixel = column_colors[i];
             }
         }
         else {
-            throw invalid_argument("Style not set or found.");
+            throw invalid_argument("Style not found.");
         }
+
+        imshow("FRAME", frame);
+        imshow("RENDERING...", art_image);
+        waitKey(1);
     }
-    catch (Exception e){
+    catch (Exception e) {
         cout << e.msg;
     }
 }
@@ -97,7 +185,7 @@ void CreateArtColumn(Mat& frame, Mat& art_image, int column_id, int style) {
  * @param movie_path The path to the movie that is going to be processed to generate the new art.
  * @param art_image A reference to the new image being created.
  */
-void CreateMovieWallArt(string movie_path, Mat & art_image) {
+void CreateMovieWallArt(string movie_path, Mat& art_image) {
     VideoCapture cap(movie_path);
 
     if (!cap.isOpened()) {
@@ -105,7 +193,7 @@ void CreateMovieWallArt(string movie_path, Mat & art_image) {
     }
     else {
         // Getting the first frame guarantees that the properties are read correctly.
-        Mat frame;
+        Mat frame(cap.get(CAP_PROP_FRAME_HEIGHT), cap.get(CAP_PROP_FRAME_WIDTH), CV_8UC3, USAGE_ALLOCATE_HOST_MEMORY);
         cap >> frame;
 
         int frame_count = cap.get(CAP_PROP_FRAME_COUNT);
@@ -122,22 +210,25 @@ void CreateMovieWallArt(string movie_path, Mat & art_image) {
             if (frame.empty())
                 break;
 
-            CreateArtColumn(frame, art_image, column_id, ART_STYLE_AVERAGE_COLOR);
-      
+            CreateArtColumn(frame, art_image, column_id, ART_STYLE_PIXEL_STRIP);
+
             current_frame += sample_interval;
             column_id++;
         }
 
         cap.release();
+        waitKey(0);
     }
 }
 
-// TODO Implement GPU processing.
+// TODO Implement series and TV Shows.
 int main(void) {
-    Mat art_image(ART_HEIGHT, ART_WIDTH, CV_8UC3);
+    Mat art_image(ART_HEIGHT, ART_WIDTH, CV_8UC3, USAGE_ALLOCATE_HOST_MEMORY);
 
     CreateMovieWallArt(MOVIE_PATH, art_image);
     imwrite(ART_PATH, art_image);
+
+    destroyAllWindows();
 
 	return 0;
 }
